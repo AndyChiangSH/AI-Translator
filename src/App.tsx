@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 type ModelOption = {
   label: string;
@@ -18,6 +18,23 @@ type TranslationRecord = {
   output: string;
   language: string;
   createdAt: string;
+};
+
+type SpeechRecognitionEventLike = Event & { results: { length: number; [index: number]: { [index: number]: { transcript: string } } } };
+type SpeechRecognitionLike = {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  start: () => void;
+  stop: () => void;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+};
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
+type SpeechWindow = Window & typeof globalThis & {
+  SpeechRecognition?: SpeechRecognitionConstructor;
+  webkitSpeechRecognition?: SpeechRecognitionConstructor;
 };
 
 const MODEL_OPTIONS: ModelOption[] = [
@@ -143,6 +160,9 @@ export default function App() {
   const [translatedText, setTranslatedText] = useState('');
   const [isTranslating, setIsTranslating] = useState(false);
   const [feedback, setFeedback] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEYS.apiKey, apiKey);
@@ -175,6 +195,13 @@ export default function App() {
       return () => window.clearTimeout(timeoutId);
     }
   }, [feedback]);
+
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop();
+      window.speechSynthesis.cancel();
+    };
+  }, []);
 
   const canTranslate = useMemo(() => {
     return apiKey.trim().length > 0 && sourceText.trim().length > 0 && !isTranslating;
@@ -251,6 +278,76 @@ export default function App() {
     setFeedback('已清除輸入與輸出內容。');
   };
 
+  const handleVoiceInput = () => {
+    if (isListening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+
+    const speechWindow = window as SpeechWindow;
+    const Recognition = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
+    if (!Recognition) {
+      setFeedback('此瀏覽器不支援語音輸入，請改用 Chrome。');
+      return;
+    }
+
+    const recognition = new Recognition();
+    recognition.lang = 'zh-TW';
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.onresult = (event) => {
+      const latestResult = event.results[event.results.length - 1]?.[0]?.transcript;
+      if (latestResult) {
+        setSourceText((currentText) => `${currentText}${currentText ? ' ' : ''}${latestResult}`);
+      }
+    };
+    recognition.onerror = () => {
+      setIsListening(false);
+      setFeedback('語音輸入發生錯誤，請確認麥克風權限。');
+    };
+    recognition.onend = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsListening(true);
+    setFeedback('正在聆聽，再次點擊麥克風即可結束。');
+  };
+
+  const handleVoiceOutput = () => {
+    if (!translatedText.trim()) {
+      setFeedback('目前沒有可播放的輸出內容。');
+      return;
+    }
+
+    if (isSpeaking) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+      return;
+    }
+
+    if (!('speechSynthesis' in window)) {
+      setFeedback('此瀏覽器不支援語音輸出。');
+      return;
+    }
+
+    const languageMap: Record<string, string> = {
+      繁體中文: 'zh-TW',
+      簡體中文: 'zh-CN',
+      英文: 'en-US',
+      日文: 'ja-JP',
+      韓文: 'ko-KR',
+    };
+    const utterance = new SpeechSynthesisUtterance(translatedText);
+    utterance.lang = languageMap[targetLanguage] ?? 'en-US';
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+    setIsSpeaking(true);
+  };
+
   const handleSelectHistory = (record: TranslationRecord) => {
     setSourceText(record.source);
     setTranslatedText(record.output);
@@ -263,7 +360,7 @@ export default function App() {
     <main className="app-shell">
       <section className="hero">
         <div className="hero-copy">
-          <h1>AI Translator <span className="version-badge">v0.6</span></h1>
+          <h1>AI Translator <span className="version-badge">v0.7</span></h1>
           <p className="hero-text">
             輸入文字，選擇語言，讓 AI 幫你快速翻譯！
           </p>
@@ -379,7 +476,12 @@ export default function App() {
         <article className="panel">
           <div className="panel-header">
             <h2>輸入文字</h2>
-            <span>{sourceText.length.toLocaleString()} 字元</span>
+            <div className="panel-tools">
+              <span>{sourceText.length.toLocaleString()} 字元</span>
+              <button type="button" className={`voice-button ${isListening ? 'active' : ''}`} aria-label={isListening ? '結束語音輸入' : '開始語音輸入'} onClick={handleVoiceInput}>
+                <Icon name="microphone" />
+              </button>
+            </div>
           </div>
           <textarea
             value={sourceText}
@@ -407,7 +509,12 @@ export default function App() {
         <article className="panel output-panel">
           <div className="panel-header">
             <h2>輸出文字</h2>
-            <span>{translatedText.length.toLocaleString()} 字元</span>
+            <div className="panel-tools">
+              <span>{translatedText.length.toLocaleString()} 字元</span>
+              <button type="button" className={`voice-button ${isSpeaking ? 'active' : ''}`} aria-label={isSpeaking ? '結束語音播放' : '播放語音'} onClick={handleVoiceOutput}>
+                <Icon name="speaker" />
+              </button>
+            </div>
           </div>
           <textarea value={translatedText} onChange={(event) => setTranslatedText(event.target.value)} placeholder="翻譯結果會顯示在這裡。" spellCheck={false} />
         </article>
@@ -424,7 +531,7 @@ export default function App() {
   );
 }
 
-function Icon({ name }: { name: 'settings' | 'history' | 'external' | 'sun' | 'moon' | 'translate' | 'swap' | 'copy' | 'trash' | 'close' }) {
+function Icon({ name }: { name: 'settings' | 'history' | 'external' | 'sun' | 'moon' | 'translate' | 'swap' | 'copy' | 'trash' | 'close' | 'microphone' | 'speaker' }) {
   const iconNames = {
     settings: 'bi-gear',
     history: 'bi-clock-history',
@@ -436,6 +543,8 @@ function Icon({ name }: { name: 'settings' | 'history' | 'external' | 'sun' | 'm
     copy: 'bi-copy',
     trash: 'bi-trash3',
     close: 'bi-x-lg',
+    microphone: 'bi-mic',
+    speaker: 'bi-volume-up',
   } as const;
 
   return <i className={`icon bi ${iconNames[name]}`} aria-hidden="true" />;
