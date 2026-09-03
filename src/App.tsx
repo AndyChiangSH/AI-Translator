@@ -12,6 +12,14 @@ type LanguageOption = {
 
 type Theme = 'light' | 'dark';
 
+type TranslationRecord = {
+  id: string;
+  source: string;
+  output: string;
+  language: string;
+  createdAt: string;
+};
+
 const MODEL_OPTIONS: ModelOption[] = [
   { label: 'Gemini 3.1 Flash Lite', value: 'gemini-3.1-flash-lite' },
   { label: 'Gemini 3.5 Flash Lite', value: 'gemini-3.5-flash-lite' },
@@ -34,6 +42,7 @@ const STORAGE_KEYS = {
   targetLanguage: 'ai-translator.targetLanguage',
   theme: 'ai-translator.theme',
   annotateJapanese: 'ai-translator.annotateJapanese',
+  history: 'ai-translator.history',
 };
 
 function getStoredValue(key: string, fallback: string) {
@@ -42,6 +51,15 @@ function getStoredValue(key: string, fallback: string) {
   }
 
   return window.localStorage.getItem(key) ?? fallback;
+}
+
+function getStoredHistory(): TranslationRecord[] {
+  try {
+    const storedHistory = JSON.parse(getStoredValue(STORAGE_KEYS.history, '[]')) as unknown;
+    return Array.isArray(storedHistory) ? storedHistory as TranslationRecord[] : [];
+  } catch {
+    return [];
+  }
 }
 
 function buildPrompt(sourceText: string, targetLanguage: string, annotateJapanese: boolean) {
@@ -119,6 +137,8 @@ export default function App() {
     () => getStoredValue(STORAGE_KEYS.annotateJapanese, 'true') === 'true',
   );
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [history, setHistory] = useState<TranslationRecord[]>(getStoredHistory);
   const [sourceText, setSourceText] = useState('');
   const [translatedText, setTranslatedText] = useState('');
   const [isTranslating, setIsTranslating] = useState(false);
@@ -144,6 +164,10 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEYS.annotateJapanese, String(annotateJapanese));
   }, [annotateJapanese]);
+
+  useEffect(() => {
+    window.localStorage.setItem(STORAGE_KEYS.history, JSON.stringify(history));
+  }, [history]);
 
   useEffect(() => {
     if (feedback) {
@@ -173,6 +197,16 @@ export default function App() {
     try {
       const result = await translateWithGemini(apiKey.trim(), model, sourceText, targetLanguage, annotateJapanese);
       setTranslatedText(result);
+      setHistory((currentHistory) => [
+        {
+          id: `${Date.now()}`,
+          source: sourceText,
+          output: result,
+          language: targetLanguage,
+          createdAt: new Date().toLocaleString(),
+        },
+        ...currentHistory,
+      ].slice(0, 10));
       setFeedback('翻譯完成。');
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : '翻譯失敗。');
@@ -217,11 +251,19 @@ export default function App() {
     setFeedback('已清除輸入與輸出內容。');
   };
 
+  const handleSelectHistory = (record: TranslationRecord) => {
+    setSourceText(record.source);
+    setTranslatedText(record.output);
+    setTargetLanguage(record.language);
+    setIsHistoryOpen(false);
+    setFeedback('已載入翻譯紀錄。');
+  };
+
   return (
     <main className="app-shell">
       <section className="hero">
         <div className="hero-copy">
-          <h1>AI Translator <span className="version-badge">v0.4</span></h1>
+          <h1>AI Translator <span className="version-badge">v0.5</span></h1>
           <p className="hero-text">
             輸入文字，選擇語言，讓 AI 幫你快速翻譯！
           </p>
@@ -235,6 +277,16 @@ export default function App() {
           onClick={() => setIsSettingsOpen((isOpen) => !isOpen)}
         >
           <Icon name="settings" />
+        </button>
+
+        <button
+          type="button"
+          className="history-toggle"
+          aria-label="開啟翻譯紀錄"
+          aria-expanded={isHistoryOpen}
+          onClick={() => setIsHistoryOpen((isOpen) => !isOpen)}
+        >
+          <Icon name="history" />
         </button>
 
         {isSettingsOpen && <div className="settings-overlay" role="presentation" onClick={() => setIsSettingsOpen(false)}>
@@ -294,6 +346,33 @@ export default function App() {
             </div>
           </div>
         </div>}
+
+        {isHistoryOpen && <div className="settings-overlay" role="presentation" onClick={() => setIsHistoryOpen(false)}>
+          <div className="settings-card history-card" role="dialog" aria-modal="true" aria-label="翻譯紀錄" onClick={(event) => event.stopPropagation()}>
+            <div className="settings-header">
+              <h2>翻譯紀錄</h2>
+              <button type="button" className="modal-close" aria-label="關閉翻譯紀錄" onClick={() => setIsHistoryOpen(false)}>
+                <Icon name="close" />
+              </button>
+            </div>
+            {history.length === 0 ? (
+              <p className="empty-history">尚無翻譯紀錄。</p>
+            ) : (
+              <div className="history-list">
+                {history.map((record) => (
+                  <button type="button" className="history-item" key={record.id} onClick={() => handleSelectHistory(record)}>
+                    <div className="history-item-header">
+                      <strong>{record.language}</strong>
+                      <span>{record.createdAt}</span>
+                    </div>
+                    <p>{record.source}</p>
+                    <p className="history-output">{record.output}</p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>}
       </section>
 
       <section className="workspace">
@@ -330,7 +409,7 @@ export default function App() {
             <h2>輸出文字</h2>
             <span>{translatedText.length.toLocaleString()} 字元</span>
           </div>
-          <textarea value={translatedText} readOnly placeholder="翻譯結果會顯示在這裡。" spellCheck={false} />
+          <textarea value={translatedText} onChange={(event) => setTranslatedText(event.target.value)} placeholder="翻譯結果會顯示在這裡。" spellCheck={false} />
         </article>
       </section>
       <footer className="site-footer">
@@ -345,9 +424,10 @@ export default function App() {
   );
 }
 
-function Icon({ name }: { name: 'settings' | 'external' | 'sun' | 'moon' | 'translate' | 'swap' | 'copy' | 'trash' | 'close' }) {
+function Icon({ name }: { name: 'settings' | 'history' | 'external' | 'sun' | 'moon' | 'translate' | 'swap' | 'copy' | 'trash' | 'close' }) {
   const iconNames = {
     settings: 'bi-gear',
+    history: 'bi-clock-history',
     external: 'bi-box-arrow-up-right',
     sun: 'bi-sun',
     moon: 'bi-moon',
