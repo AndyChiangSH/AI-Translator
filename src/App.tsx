@@ -79,6 +79,17 @@ function getStoredHistory(): TranslationRecord[] {
   }
 }
 
+function getSpeechInputLanguage() {
+  const browserLanguage = navigator.language.toLowerCase();
+
+  if (browserLanguage.startsWith('ja')) return 'ja-JP';
+  if (browserLanguage.startsWith('ko')) return 'ko-KR';
+  if (browserLanguage.startsWith('en')) return 'en-US';
+  if (browserLanguage === 'zh-cn' || browserLanguage === 'zh-sg') return 'zh-CN';
+
+  return 'zh-TW';
+}
+
 function buildPrompt(sourceText: string, targetLanguage: string, annotateJapanese: boolean) {
   const targetInstruction =
     targetLanguage === '日文' && annotateJapanese
@@ -292,14 +303,7 @@ export default function App() {
     }
 
     const recognition = new Recognition();
-    const speechLanguageMap: Record<string, string> = {
-      繁體中文: 'zh-TW',
-      簡體中文: 'zh-CN',
-      英文: 'en-US',
-      日文: 'ja-JP',
-      韓文: 'ko-KR',
-    };
-    recognition.lang = speechLanguageMap[targetLanguage] ?? 'zh-TW';
+    recognition.lang = getSpeechInputLanguage();
     recognition.continuous = true;
     recognition.interimResults = false;
     recognition.onresult = (event) => {
@@ -367,7 +371,7 @@ export default function App() {
     <main className="app-shell">
       <section className="hero">
         <div className="hero-copy">
-          <h1>AI Translator <span className="version-badge">v0.8</span></h1>
+          <h1>AI Translator <span className="version-badge">v0.9</span></h1>
           <p className="hero-text">
             輸入文字，選擇語言，讓 AI 幫你快速翻譯！
           </p>
@@ -482,7 +486,7 @@ export default function App() {
       <section className="workspace">
         <article className="panel">
           <div className="panel-header">
-            <div className="panel-title"><span>{sourceText.length.toLocaleString()} 字元</span><h2>輸入文字</h2></div>
+            <div className="panel-title input-panel-title"><h2>輸入文字</h2><span>{sourceText.length.toLocaleString()} 字元</span></div>
             <div className="panel-tools">
               <button type="button" className={`voice-button ${isListening ? 'active' : ''}`} aria-label={isListening ? '結束語音輸入' : '開始語音輸入'} onClick={handleVoiceInput}>
                 <Icon name="microphone" />
