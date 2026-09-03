@@ -10,6 +10,8 @@ type LanguageOption = {
   value: string;
 };
 
+type Theme = 'light' | 'dark';
+
 const MODEL_OPTIONS: ModelOption[] = [
   { label: 'Gemini 3.1 Flash Lite', value: 'gemini-3.1-flash-lite' },
   { label: 'Gemini 3.5 Flash Lite', value: 'gemini-3.5-flash-lite' },
@@ -30,6 +32,8 @@ const STORAGE_KEYS = {
   apiKey: 'ai-translator.apiKey',
   model: 'ai-translator.model',
   targetLanguage: 'ai-translator.targetLanguage',
+  theme: 'ai-translator.theme',
+  annotateJapanese: 'ai-translator.annotateJapanese',
 };
 
 function getStoredValue(key: string, fallback: string) {
@@ -40,9 +44,9 @@ function getStoredValue(key: string, fallback: string) {
   return window.localStorage.getItem(key) ?? fallback;
 }
 
-function buildPrompt(sourceText: string, targetLanguage: string) {
+function buildPrompt(sourceText: string, targetLanguage: string, annotateJapanese: boolean) {
   const targetInstruction =
-    targetLanguage === '日文'
+    targetLanguage === '日文' && annotateJapanese
       ? 'Translate into natural Japanese. When kanji appears, annotate the reading in parentheses right after the kanji or kanji phrase, for example 漢字(かんじ). Keep the response as only the translated text.'
       : `Translate into ${targetLanguage}. Return only the translated text and nothing else.`;
 
@@ -56,7 +60,13 @@ function buildPrompt(sourceText: string, targetLanguage: string) {
   ].join('\n');
 }
 
-async function translateWithGemini(apiKey: string, model: string, sourceText: string, targetLanguage: string) {
+async function translateWithGemini(
+  apiKey: string,
+  model: string,
+  sourceText: string,
+  targetLanguage: string,
+  annotateJapanese: boolean,
+) {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const response = await fetch(endpoint, {
     method: 'POST',
@@ -67,7 +77,7 @@ async function translateWithGemini(apiKey: string, model: string, sourceText: st
       contents: [
         {
           role: 'user',
-          parts: [{ text: buildPrompt(sourceText, targetLanguage) }],
+          parts: [{ text: buildPrompt(sourceText, targetLanguage, annotateJapanese) }],
         },
       ],
       generationConfig: {
@@ -104,6 +114,11 @@ export default function App() {
   const [targetLanguage, setTargetLanguage] = useState(() =>
     getStoredValue(STORAGE_KEYS.targetLanguage, LANGUAGE_OPTIONS[0].value),
   );
+  const [theme, setTheme] = useState<Theme>(() => getStoredValue(STORAGE_KEYS.theme, 'light') as Theme);
+  const [annotateJapanese, setAnnotateJapanese] = useState(
+    () => getStoredValue(STORAGE_KEYS.annotateJapanese, 'true') === 'true',
+  );
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [sourceText, setSourceText] = useState('');
   const [translatedText, setTranslatedText] = useState('');
   const [isTranslating, setIsTranslating] = useState(false);
@@ -120,6 +135,22 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEYS.targetLanguage, targetLanguage);
   }, [targetLanguage]);
+
+  useEffect(() => {
+    window.localStorage.setItem(STORAGE_KEYS.theme, theme);
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+
+  useEffect(() => {
+    window.localStorage.setItem(STORAGE_KEYS.annotateJapanese, String(annotateJapanese));
+  }, [annotateJapanese]);
+
+  useEffect(() => {
+    if (feedback) {
+      const timeoutId = window.setTimeout(() => setFeedback(''), 3200);
+      return () => window.clearTimeout(timeoutId);
+    }
+  }, [feedback]);
 
   const canTranslate = useMemo(() => {
     return apiKey.trim().length > 0 && sourceText.trim().length > 0 && !isTranslating;
@@ -140,7 +171,7 @@ export default function App() {
     setFeedback('翻譯中...');
 
     try {
-      const result = await translateWithGemini(apiKey.trim(), model, sourceText, targetLanguage);
+      const result = await translateWithGemini(apiKey.trim(), model, sourceText, targetLanguage, annotateJapanese);
       setTranslatedText(result);
       setFeedback('翻譯完成。');
     } catch (error) {
@@ -167,81 +198,102 @@ export default function App() {
       return;
     }
 
-    await navigator.clipboard.writeText(translatedText);
-    setFeedback('已複製翻譯內容。');
+    try {
+      await navigator.clipboard.writeText(translatedText);
+      setFeedback('已複製翻譯內容。');
+    } catch {
+      setFeedback('無法存取剪貼簿，請手動複製。');
+    }
   };
 
-  const handleDownload = () => {
-    if (!translatedText.trim()) {
-      setFeedback('目前沒有可下載的翻譯內容。');
+  const handleClear = () => {
+    if (!sourceText && !translatedText) {
+      setFeedback('目前沒有可清除的內容。');
       return;
     }
 
-    const blob = new Blob([translatedText], { type: 'text/plain;charset=utf-8' });
-    const downloadUrl = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-
-    anchor.href = downloadUrl;
-    anchor.download = `translation-${timestamp}.txt`;
-    anchor.click();
-
-    URL.revokeObjectURL(downloadUrl);
-    setFeedback('已開始下載翻譯內容。');
+    setSourceText('');
+    setTranslatedText('');
+    setFeedback('已清除輸入與輸出內容。');
   };
 
   return (
     <main className="app-shell">
       <section className="hero">
         <div className="hero-copy">
-          <p className="eyebrow">Gemini-powered translator</p>
-          <h1>AI Translator</h1>
+          <h1>AI Translator <span className="version-badge">v0.4</span></h1>
           <p className="hero-text">
-            輸入你自己的 Gemini API KEY，選擇模型與目標語言，直接取得乾淨的翻譯結果。
+            輸入文字，選擇語言，讓 AI 幫你快速翻譯！
           </p>
         </div>
 
-        <div className="settings-card">
-          <label className="field">
-            <span>Gemini API KEY</span>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(event) => setApiKey(event.target.value)}
-              placeholder="AIza..."
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </label>
+        <button
+          type="button"
+          className="settings-toggle"
+          aria-label="開啟設定"
+          aria-expanded={isSettingsOpen}
+          onClick={() => setIsSettingsOpen((isOpen) => !isOpen)}
+        >
+          <Icon name="settings" />
+        </button>
 
-          <div className="field-grid">
+        {isSettingsOpen && <div className="settings-overlay" role="presentation" onClick={() => setIsSettingsOpen(false)}>
+          <div className="settings-card" role="dialog" aria-modal="true" aria-label="設定" onClick={(event) => event.stopPropagation()}>
+            <div className="settings-header">
+              <h2>設定</h2>
+              <button type="button" className="modal-close" aria-label="關閉設定" onClick={() => setIsSettingsOpen(false)}>
+                <Icon name="close" />
+              </button>
+            </div>
             <label className="field">
-              <span>模型</span>
-              <select value={model} onChange={(event) => setModel(event.target.value)}>
-                {MODEL_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+              <span className="field-label-row">
+                Gemini API KEY
+                <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">
+                  Google AI Studio <Icon name="external" />
+                </a>
+              </span>
+              <input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="AIza..." autoComplete="off" spellCheck={false} />
             </label>
 
-            <label className="field">
-              <span>翻譯語言</span>
-              <select value={targetLanguage} onChange={(event) => setTargetLanguage(event.target.value)}>
-                {LANGUAGE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+            <div className="field-grid">
+              <label className="field">
+                <span>模型</span>
+                <select value={model} onChange={(event) => setModel(event.target.value)}>
+                  {MODEL_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="field">
+                <span>翻譯語言</span>
+                <select value={targetLanguage} onChange={(event) => setTargetLanguage(event.target.value)}>
+                  {LANGUAGE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <label className="switch-row">
+              <span>日文漢字標註拼音</span>
+              <input type="checkbox" checked={annotateJapanese} onChange={(event) => setAnnotateJapanese(event.target.checked)} />
+              <span className="switch" aria-hidden="true"><span /></span>
             </label>
+
+            <div className="setting-row">
+              <span>介面風格</span>
+              <div className="segmented-control" role="group" aria-label="介面風格">
+                <button type="button" className={theme === 'light' ? 'selected' : ''} onClick={() => setTheme('light')}><Icon name="sun" /> 淺色</button>
+                <button type="button" className={theme === 'dark' ? 'selected' : ''} onClick={() => setTheme('dark')}><Icon name="moon" /> 深色</button>
+              </div>
+            </div>
           </div>
-
-          <p className="helper-text">
-            日文輸出會自動要求在漢字後加入讀音標註，例如 漢字(かんじ)。
-          </p>
-        </div>
+        </div>}
       </section>
 
       <section className="workspace">
@@ -259,21 +311,18 @@ export default function App() {
         </article>
 
         <div className="actions">
-          <button type="button" className="primary" onClick={handleTranslate} disabled={!canTranslate}>
-            {isTranslating ? '翻譯中...' : '翻譯'}
+          <button type="button" className="action-button translate" aria-label="翻譯" onClick={handleTranslate} disabled={!canTranslate}>
+            <Icon name="translate" />
           </button>
-          <button type="button" onClick={handleSwap} disabled={!translatedText.trim()}>
-            交換
+          <button type="button" className="action-button swap" aria-label="交換" onClick={handleSwap} disabled={!translatedText.trim()}>
+            <Icon name="swap" />
           </button>
-          <button type="button" onClick={handleCopy} disabled={!translatedText.trim()}>
-            複製
+          <button type="button" className="action-button copy" aria-label="複製" onClick={handleCopy} disabled={!translatedText.trim()}>
+            <Icon name="copy" />
           </button>
-          <button type="button" onClick={handleDownload} disabled={!translatedText.trim()}>
-            下載
+          <button type="button" className="action-button clear" aria-label="清除" onClick={handleClear} disabled={!sourceText && !translatedText}>
+            <Icon name="trash" />
           </button>
-          <div className="status" aria-live="polite">
-            {feedback || '準備完成，請輸入內容開始翻譯。'}
-          </div>
         </div>
 
         <article className="panel output-panel">
@@ -284,6 +333,30 @@ export default function App() {
           <textarea value={translatedText} readOnly placeholder="翻譯結果會顯示在這裡。" spellCheck={false} />
         </article>
       </section>
+      <footer className="site-footer">
+        <span>2026/09/03</span>
+        <span aria-hidden="true">|</span>
+        <span>Copyright © 2026 Andy Chiang</span>
+        <span aria-hidden="true">|</span>
+        <a href="https://github.com/AndyChiangSH/AI-Translator" target="_blank" rel="noreferrer">GitHub</a>
+      </footer>
+      {feedback && <div className="toast" role="status" aria-live="polite">{feedback}</div>}
     </main>
   );
+}
+
+function Icon({ name }: { name: 'settings' | 'external' | 'sun' | 'moon' | 'translate' | 'swap' | 'copy' | 'trash' | 'close' }) {
+  const iconNames = {
+    settings: 'bi-gear',
+    external: 'bi-box-arrow-up-right',
+    sun: 'bi-sun',
+    moon: 'bi-moon',
+    translate: 'bi-translate',
+    swap: 'bi-arrow-left-right',
+    copy: 'bi-copy',
+    trash: 'bi-trash3',
+    close: 'bi-x-lg',
+  } as const;
+
+  return <i className={`icon bi ${iconNames[name]}`} aria-hidden="true" />;
 }
