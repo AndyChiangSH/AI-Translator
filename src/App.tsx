@@ -243,14 +243,14 @@ export default function App() {
   };
 
   const handleSwap = () => {
-    if (!translatedText.trim()) {
-      setFeedback('目前沒有可交換的翻譯內容。');
+    if (!sourceText.trim() && !translatedText.trim()) {
+      setFeedback('目前沒有可交換的內容。');
       return;
     }
 
     setSourceText(translatedText);
-    setTranslatedText('');
-    setFeedback('已將翻譯內容放回輸入框。');
+    setTranslatedText(sourceText);
+    setFeedback('已互換輸入與輸出內容。');
   };
 
   const handleCopy = async () => {
@@ -292,7 +292,14 @@ export default function App() {
     }
 
     const recognition = new Recognition();
-    recognition.lang = 'zh-TW';
+    const speechLanguageMap: Record<string, string> = {
+      繁體中文: 'zh-TW',
+      簡體中文: 'zh-CN',
+      英文: 'en-US',
+      日文: 'ja-JP',
+      韓文: 'ko-KR',
+    };
+    recognition.lang = speechLanguageMap[targetLanguage] ?? 'zh-TW';
     recognition.continuous = true;
     recognition.interimResults = false;
     recognition.onresult = (event) => {
@@ -360,7 +367,7 @@ export default function App() {
     <main className="app-shell">
       <section className="hero">
         <div className="hero-copy">
-          <h1>AI Translator <span className="version-badge">v0.7</span></h1>
+          <h1>AI Translator <span className="version-badge">v0.8</span></h1>
           <p className="hero-text">
             輸入文字，選擇語言，讓 AI 幫你快速翻譯！
           </p>
@@ -475,9 +482,8 @@ export default function App() {
       <section className="workspace">
         <article className="panel">
           <div className="panel-header">
-            <h2>輸入文字</h2>
+            <div className="panel-title"><span>{sourceText.length.toLocaleString()} 字元</span><h2>輸入文字</h2></div>
             <div className="panel-tools">
-              <span>{sourceText.length.toLocaleString()} 字元</span>
               <button type="button" className={`voice-button ${isListening ? 'active' : ''}`} aria-label={isListening ? '結束語音輸入' : '開始語音輸入'} onClick={handleVoiceInput}>
                 <Icon name="microphone" />
               </button>
@@ -495,7 +501,7 @@ export default function App() {
           <button type="button" className="action-button translate" aria-label="翻譯" onClick={handleTranslate} disabled={!canTranslate}>
             <Icon name="translate" />
           </button>
-          <button type="button" className="action-button swap" aria-label="交換" onClick={handleSwap} disabled={!translatedText.trim()}>
+          <button type="button" className="action-button swap" aria-label="交換" onClick={handleSwap} disabled={!sourceText.trim() && !translatedText.trim()}>
             <Icon name="swap" />
           </button>
           <button type="button" className="action-button copy" aria-label="複製" onClick={handleCopy} disabled={!translatedText.trim()}>
@@ -508,9 +514,8 @@ export default function App() {
 
         <article className="panel output-panel">
           <div className="panel-header">
-            <h2>輸出文字</h2>
+            <div className="panel-title"><span>{translatedText.length.toLocaleString()} 字元</span><h2>輸出文字</h2></div>
             <div className="panel-tools">
-              <span>{translatedText.length.toLocaleString()} 字元</span>
               <button type="button" className={`voice-button ${isSpeaking ? 'active' : ''}`} aria-label={isSpeaking ? '結束語音播放' : '播放語音'} onClick={handleVoiceOutput}>
                 <Icon name="speaker" />
               </button>
