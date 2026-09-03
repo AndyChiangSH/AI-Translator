@@ -71,6 +71,7 @@ input:focus, select:focus, textarea:focus { border-color: #70a7ed; box-shadow: 0
 .panel-title { display: flex; align-items: center; gap: 10px; }
 .panel-title > span { order: -1; color: #748399; font-size: .92rem; }
 .input-panel-title > span { order: 0; }
+.output-panel-title > span { order: 0; }
 .panel-header h2 { font-size: 1.05rem; }
 .panel-tools { display: flex; align-items: center; gap: 10px; }
 .voice-button { width: 34px; height: 34px; min-height: 0; padding: 0; display: grid; place-items: center; border: 0; border-radius: 9px; color: #3478d4; background: #e7f0ff; }

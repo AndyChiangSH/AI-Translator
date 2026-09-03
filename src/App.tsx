@@ -16,7 +16,9 @@ type TranslationRecord = {
   id: string;
   source: string;
   output: string;
-  language: string;
+  inputLanguage: string;
+  outputLanguage: string;
+  language?: string;
   createdAt: string;
 };
 
@@ -56,7 +58,8 @@ const LANGUAGE_OPTIONS: LanguageOption[] = [
 const STORAGE_KEYS = {
   apiKey: 'ai-translator.apiKey',
   model: 'ai-translator.model',
-  targetLanguage: 'ai-translator.targetLanguage',
+  inputLanguage: 'ai-translator.inputLanguage',
+  outputLanguage: 'ai-translator.outputLanguage',
   theme: 'ai-translator.theme',
   annotateJapanese: 'ai-translator.annotateJapanese',
   history: 'ai-translator.history',
@@ -79,7 +82,18 @@ function getStoredHistory(): TranslationRecord[] {
   }
 }
 
-function getSpeechInputLanguage() {
+function getSpeechInputLanguage(inputLanguage: string) {
+  if (inputLanguage !== '任意語言') {
+    const languageMap: Record<string, string> = {
+      繁體中文: 'zh-TW',
+      簡體中文: 'zh-CN',
+      英文: 'en-US',
+      日文: 'ja-JP',
+      韓文: 'ko-KR',
+    };
+    return languageMap[inputLanguage] ?? 'zh-TW';
+  }
+
   const browserLanguage = navigator.language.toLowerCase();
 
   if (browserLanguage.startsWith('ja')) return 'ja-JP';
@@ -90,14 +104,16 @@ function getSpeechInputLanguage() {
   return 'zh-TW';
 }
 
-function buildPrompt(sourceText: string, targetLanguage: string, annotateJapanese: boolean) {
+function buildPrompt(sourceText: string, inputLanguage: string, outputLanguage: string, annotateJapanese: boolean) {
   const targetInstruction =
-    targetLanguage === '日文' && annotateJapanese
+    outputLanguage === '日文' && annotateJapanese
       ? 'Translate into natural Japanese. When kanji appears, annotate the reading in parentheses right after the kanji or kanji phrase, for example 漢字(かんじ). Keep the response as only the translated text.'
-      : `Translate into ${targetLanguage}. Return only the translated text and nothing else.`;
+      : `Translate into ${outputLanguage}. Return only the translated text and nothing else.`;
+  const sourceInstruction = inputLanguage === '任意語言' ? 'Detect the source language automatically.' : `The source language is ${inputLanguage}.`;
 
   return [
     'You are a precise translation engine.',
+    sourceInstruction,
     targetInstruction,
     'Preserve line breaks, formatting, numbers, and named entities unless translation requires otherwise.',
     '',
@@ -110,7 +126,8 @@ async function translateWithGemini(
   apiKey: string,
   model: string,
   sourceText: string,
-  targetLanguage: string,
+  inputLanguage: string,
+  outputLanguage: string,
   annotateJapanese: boolean,
 ) {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
@@ -123,7 +140,7 @@ async function translateWithGemini(
       contents: [
         {
           role: 'user',
-          parts: [{ text: buildPrompt(sourceText, targetLanguage, annotateJapanese) }],
+          parts: [{ text: buildPrompt(sourceText, inputLanguage, outputLanguage, annotateJapanese) }],
         },
       ],
       generationConfig: {
@@ -157,8 +174,9 @@ async function translateWithGemini(
 export default function App() {
   const [apiKey, setApiKey] = useState(() => getStoredValue(STORAGE_KEYS.apiKey, ''));
   const [model, setModel] = useState(() => getStoredValue(STORAGE_KEYS.model, MODEL_OPTIONS[0].value));
-  const [targetLanguage, setTargetLanguage] = useState(() =>
-    getStoredValue(STORAGE_KEYS.targetLanguage, LANGUAGE_OPTIONS[0].value),
+  const [inputLanguage, setInputLanguage] = useState(() => getStoredValue(STORAGE_KEYS.inputLanguage, '任意語言'));
+  const [outputLanguage, setOutputLanguage] = useState(() =>
+    getStoredValue(STORAGE_KEYS.outputLanguage, LANGUAGE_OPTIONS[0].value),
   );
   const [theme, setTheme] = useState<Theme>(() => getStoredValue(STORAGE_KEYS.theme, 'light') as Theme);
   const [annotateJapanese, setAnnotateJapanese] = useState(
@@ -184,8 +202,12 @@ export default function App() {
   }, [model]);
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEYS.targetLanguage, targetLanguage);
-  }, [targetLanguage]);
+    window.localStorage.setItem(STORAGE_KEYS.inputLanguage, inputLanguage);
+  }, [inputLanguage]);
+
+  useEffect(() => {
+    window.localStorage.setItem(STORAGE_KEYS.outputLanguage, outputLanguage);
+  }, [outputLanguage]);
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEYS.theme, theme);
@@ -233,14 +255,15 @@ export default function App() {
     setFeedback('翻譯中...');
 
     try {
-      const result = await translateWithGemini(apiKey.trim(), model, sourceText, targetLanguage, annotateJapanese);
+      const result = await translateWithGemini(apiKey.trim(), model, sourceText, inputLanguage, outputLanguage, annotateJapanese);
       setTranslatedText(result);
       setHistory((currentHistory) => [
         {
           id: `${Date.now()}`,
           source: sourceText,
           output: result,
-          language: targetLanguage,
+          inputLanguage,
+          outputLanguage,
           createdAt: new Date().toLocaleString(),
         },
         ...currentHistory,
@@ -303,7 +326,7 @@ export default function App() {
     }
 
     const recognition = new Recognition();
-    recognition.lang = getSpeechInputLanguage();
+    recognition.lang = getSpeechInputLanguage(inputLanguage);
     recognition.continuous = true;
     recognition.interimResults = false;
     recognition.onresult = (event) => {
@@ -351,7 +374,7 @@ export default function App() {
       韓文: 'ko-KR',
     };
     const utterance = new SpeechSynthesisUtterance(translatedText);
-    utterance.lang = languageMap[targetLanguage] ?? 'en-US';
+    utterance.lang = languageMap[outputLanguage] ?? 'en-US';
     utterance.onend = () => setIsSpeaking(false);
     utterance.onerror = () => setIsSpeaking(false);
     window.speechSynthesis.cancel();
@@ -362,7 +385,8 @@ export default function App() {
   const handleSelectHistory = (record: TranslationRecord) => {
     setSourceText(record.source);
     setTranslatedText(record.output);
-    setTargetLanguage(record.language);
+    setInputLanguage(record.inputLanguage ?? '任意語言');
+    setOutputLanguage(record.outputLanguage ?? record.language ?? LANGUAGE_OPTIONS[0].value);
     setIsHistoryOpen(false);
     setFeedback('已載入翻譯紀錄。');
   };
@@ -371,7 +395,7 @@ export default function App() {
     <main className="app-shell">
       <section className="hero">
         <div className="hero-copy">
-          <h1>AI Translator <span className="version-badge">v0.9</span></h1>
+          <h1>AI Translator <span className="version-badge">v0.10</span></h1>
           <p className="hero-text">
             輸入文字，選擇語言，讓 AI 幫你快速翻譯！
           </p>
@@ -428,8 +452,20 @@ export default function App() {
               </label>
 
               <label className="field">
-                <span>翻譯語言</span>
-                <select value={targetLanguage} onChange={(event) => setTargetLanguage(event.target.value)}>
+                <span>輸入語言</span>
+                <select value={inputLanguage} onChange={(event) => setInputLanguage(event.target.value)}>
+                  <option value="任意語言">任意語言</option>
+                  {LANGUAGE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="field">
+                <span>輸出語言</span>
+                <select value={outputLanguage} onChange={(event) => setOutputLanguage(event.target.value)}>
                   {LANGUAGE_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
@@ -518,7 +554,7 @@ export default function App() {
 
         <article className="panel output-panel">
           <div className="panel-header">
-            <div className="panel-title"><span>{translatedText.length.toLocaleString()} 字元</span><h2>輸出文字</h2></div>
+            <div className="panel-title output-panel-title"><h2>輸出文字</h2><span>{translatedText.length.toLocaleString()} 字元</span></div>
             <div className="panel-tools">
               <button type="button" className={`voice-button ${isSpeaking ? 'active' : ''}`} aria-label={isSpeaking ? '結束語音播放' : '播放語音'} onClick={handleVoiceOutput}>
                 <Icon name="speaker" />
