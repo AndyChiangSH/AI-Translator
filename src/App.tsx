@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 
 type ModelOption = {
   label: string;
@@ -535,6 +536,7 @@ export default function App() {
         <a href="https://github.com/AndyChiangSH/AI-Translator" target="_blank" rel="noreferrer">GitHub</a>
       </footer>
       {feedback && <div className="toast" role="status" aria-live="polite">{feedback}</div>}
+      <Analytics />
     </main>
   );
 }
