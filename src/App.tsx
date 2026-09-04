@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 
 type ModelOption = {
   label: string;
@@ -537,6 +538,7 @@ export default function App() {
       </footer>
       {feedback && <div className="toast" role="status" aria-live="polite">{feedback}</div>}
       <Analytics />
+      <SpeedInsights />
     </main>
   );
 }
