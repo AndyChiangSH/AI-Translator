@@ -315,11 +315,12 @@ export default function App() {
     recognition.onend = () => {
       setIsListening(false);
       recognitionRef.current = null;
+      setFeedback('已結束語音輸入。');
     };
     recognitionRef.current = recognition;
     recognition.start();
     setIsListening(true);
-    setFeedback('正在聆聽，再次點擊麥克風即可結束。');
+    setFeedback('正在錄音，再次點擊麥克風即可結束。');
   };
 
   const handleVoiceOutput = () => {
@@ -331,6 +332,7 @@ export default function App() {
     if (isSpeaking) {
       window.speechSynthesis.cancel();
       setIsSpeaking(false);
+      setFeedback('已停止語音播放。');
       return;
     }
 
@@ -347,12 +349,13 @@ export default function App() {
       韓文: 'ko-KR',
     };
     const utterance = new SpeechSynthesisUtterance(translatedText);
-    utterance.lang = languageMap[targetLanguage] ?? 'en-US';
+    utterance.lang = languageMap[targetLanguage] ?? 'zh-TW';
     utterance.onend = () => setIsSpeaking(false);
     utterance.onerror = () => setIsSpeaking(false);
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
     setIsSpeaking(true);
+    setFeedback('正在播放語音，再次點擊喇叭即可結束。');
   };
 
   const handleSelectHistory = (record: TranslationRecord) => {
@@ -367,7 +370,7 @@ export default function App() {
     <main className="app-shell">
       <section className="hero">
         <div className="hero-copy">
-          <h1>AI Translator <span className="version-badge">v0.8</span></h1>
+          <h1>AI Translator <span className="version-badge">v0.9</span></h1>
           <p className="hero-text">
             輸入文字，選擇語言，讓 AI 幫你快速翻譯！
           </p>
@@ -482,7 +485,7 @@ export default function App() {
       <section className="workspace">
         <article className="panel">
           <div className="panel-header">
-            <div className="panel-title"><span>{sourceText.length.toLocaleString()} 字元</span><h2>輸入文字</h2></div>
+            <div className="panel-title"><h2>輸入文字</h2><span>{sourceText.length.toLocaleString()} 字元</span></div>
             <div className="panel-tools">
               <button type="button" className={`voice-button ${isListening ? 'active' : ''}`} aria-label={isListening ? '結束語音輸入' : '開始語音輸入'} onClick={handleVoiceInput}>
                 <Icon name="microphone" />
@@ -492,7 +495,7 @@ export default function App() {
           <textarea
             value={sourceText}
             onChange={(event) => setSourceText(event.target.value)}
-            placeholder="在這裡輸入任意語言的內容..."
+            placeholder="請輸入任意語言的內容..."
             spellCheck={false}
           />
         </article>
@@ -514,18 +517,18 @@ export default function App() {
 
         <article className="panel output-panel">
           <div className="panel-header">
-            <div className="panel-title"><span>{translatedText.length.toLocaleString()} 字元</span><h2>輸出文字</h2></div>
+            <div className="panel-title"><h2>輸出文字</h2><span>{translatedText.length.toLocaleString()} 字元</span></div>
             <div className="panel-tools">
               <button type="button" className={`voice-button ${isSpeaking ? 'active' : ''}`} aria-label={isSpeaking ? '結束語音播放' : '播放語音'} onClick={handleVoiceOutput}>
                 <Icon name="speaker" />
               </button>
             </div>
           </div>
-          <textarea value={translatedText} onChange={(event) => setTranslatedText(event.target.value)} placeholder="翻譯結果會顯示在這裡。" spellCheck={false} />
+          <textarea value={translatedText} onChange={(event) => setTranslatedText(event.target.value)} placeholder="翻譯結果會顯示在這裡..." spellCheck={false} />
         </article>
       </section>
       <footer className="site-footer">
-        <span>2026/09/03</span>
+        <span>2026/09/04</span>
         <span aria-hidden="true">|</span>
         <span>Copyright © 2026 Andy Chiang</span>
         <span aria-hidden="true">|</span>
